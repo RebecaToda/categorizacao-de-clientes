@@ -1,17 +1,33 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, jsonify
 import mysql.connector
+import sqlite3
 from datetime import datetime, date
 
 app = Flask(__name__)
 
-def get_db_connection():
+def get_mysql_connection():
     return mysql.connector.connect(
         host="localhost",
-        port=40115,  # Porta do seu DBeaver
+        port=40115,
         user="root",
         password="",
         database="ajxfood"
     )
+
+def init_sqlite():
+    conn = sqlite3.connect('controle_contatos.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS contatos (
+            codigo_cliente INTEGER PRIMARY KEY,
+            ultima_mensagem TEXT,
+            resposta_cliente INTEGER DEFAULT 0
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_sqlite()
 
 @app.route('/')
 def index():
@@ -20,10 +36,9 @@ def index():
     max_dias = request.args.get('max_dias', '').strip()
     ordem_data = request.args.get('ordem', 'desc').strip()
 
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    conn_sql = get_mysql_connection()
+    cursor_sql = conn_sql.cursor(dictionary=True)
 
-    # Consulta unificada com tratamento de ordenação garantido para todos os clientes
     query = """
         SELECT 
             c.codigo AS codigo_cliente,
@@ -56,22 +71,28 @@ def index():
 
     query += " GROUP BY c.codigo, c.nome_razao, c.tel_1, c.cidade, c.data"
 
-    # Ordenação blindada: utiliza o pedido real e, se não houver, recorre à data de registo do cliente
     if ordem_data == 'asc':
         query += " ORDER BY COALESCE(MAX(todas_vendas.data_venda), c.data) ASC, c.codigo ASC;"
     else:
         query += " ORDER BY COALESCE(MAX(todas_vendas.data_venda), c.data) DESC, c.codigo ASC;"
 
-    cursor.execute(query, params)
-    resultados = cursor.fetchall()
+    cursor_sql.execute(query, params)
+    resultados = cursor_sql.fetchall()
     
-    cursor.close()
-    conn.close()
+    cursor_sql.close()
+    conn_sql.close()
+
+    conn_sqlite = sqlite3.connect('controle_contatos.db')
+    cursor_sqlite = conn_sqlite.cursor()
+    cursor_sqlite.execute("SELECT codigo_cliente, ultima_mensagem, resposta_cliente FROM contatos")
+    contatos_dict = {row[0]: {'ultima_mensagem': row[1], 'resposta_cliente': row[2]} for row in cursor_sqlite.fetchall()}
+    conn_sqlite.close()
 
     hoje = datetime.now().date()
     clientes_processados = []
 
     for row in resultados:
+        cli_id = row['codigo_cliente']
         dt_ref = row['ultimo_pedido_real'] if row['ultimo_pedido_real'] else row['data_registro']
         dias_sem_comprar = None
         
@@ -100,10 +121,6 @@ def index():
             data_formatada = 'Nunca comprou'
             dias_sem_comprar = 99999
 
-        # Regras de Classificação rigorosas:
-        # - Fiel: Até 15 dias sem comprar
-        # - Oscilante: Entre 16 e 45 dias
-        # - Inativo: Mais de 45 dias ou sem compras reais
         if dias_sem_comprar > 45 or row['ultimo_pedido_real'] is None:
             status = 'Cliente Inativo'
         elif dias_sem_comprar >= 16:
@@ -111,23 +128,25 @@ def index():
         else:
             status = 'Cliente Fiel'
 
+        info_contato = contatos_dict.get(cli_id, {'ultima_mensagem': '', 'resposta_cliente': 0})
+
         clientes_processados.append({
-            'codigo_cliente': row['codigo_cliente'],
+            'codigo_cliente': cli_id,
             'nome_cliente': row['nome_cliente'],
             'telefone': row['telefone'],
             'cidade': row['cidade'] or 'Bernardino de Campos',
             'ultimo_pedido_str': data_formatada,
             'dias_num': dias_sem_comprar,
             'dias_sem_comprar': f"{dias_sem_comprar} dias" if dias_sem_comprar != 99999 else "N/A",
-            'status_atividade': status
+            'status_atividade': status,
+            'ultima_mensagem': info_contato['ultima_mensagem'] or '',
+            'resposta_cliente': True if info_contato['resposta_cliente'] == 1 else False
         })
 
-    # Contadores reais para os Cards do Dashboard
     total_fiel = sum(1 for x in clientes_processados if x['status_atividade'] == 'Cliente Fiel')
     total_oscilante = sum(1 for x in clientes_processados if x['status_atividade'] == 'Cliente Oscilante')
     total_inativo = sum(1 for x in clientes_processados if x['status_atividade'] == 'Cliente Inativo')
 
-    # Filtros visuais da interface (Slider e Botões de Status)
     clientes_filtrados = []
     for c in clientes_processados:
         if max_dias and max_dias.isdigit():
@@ -153,6 +172,33 @@ def index():
                            total_fiel=total_fiel,
                            total_oscilante=total_oscilante,
                            total_inativo=total_inativo)
+
+@app.route('/atualizar-contato', methods=['POST'])
+def atualizar_contato():
+    data = request.get_json()
+    print("DADOS RECEBIDOS:", data)
+    
+    codigo_cliente = data.get('codigo')
+    ultima_mensagem = data.get('ultima_mensagem') or None
+    resposta_cliente = 1 if data.get('resposta_cliente') else 0
+
+    try:
+        conn = sqlite3.connect('controle_contatos.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO contatos (codigo_cliente, ultima_mensagem, resposta_cliente)
+            VALUES (?, ?, ?)
+            ON CONFLICT(codigo_cliente) DO UPDATE SET
+                ultima_mensagem = excluded.ultima_mensagem,
+                resposta_cliente = excluded.resposta_cliente
+        ''', (codigo_cliente, ultima_mensagem, resposta_cliente))
+        conn.commit()
+        conn.close()
+        print("SALVO COM SUCESSO NO SQLITE LOCAL!")
+        return jsonify({'sucesso': True})
+    except Exception as e:
+        print("ERRO AO SALVAR:", str(e))
+        return jsonify({'sucesso': False}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
