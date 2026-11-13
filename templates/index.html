@@ -3,23 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <title>Gestão de Atividade de Clientes - Pizzaria</title>
-
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="bg-light">
 
     <div class="container my-4">
-      
         <h2 class="text-center fw-bold mb-4">🍕 Gestão de Atividade de Clientes</h2>
 
-       
         <div class="row text-white text-center mb-4 g-3">
             <div class="col-md-4">
                 <a href="/?status=fiel{% if max_dias %}&max_dias={{ max_dias }}{% endif %}{% if ordem_data %}&ordem={{ ordem_data }}{% endif %}" class="text-decoration-none">
                     <div class="p-3 bg-success rounded shadow-sm {% if status_filtro == 'fiel' %}border border-3 border-dark{% endif %}">
                         <h5 class="mb-1 text-white">Clientes Fiéis</h5>
                         <h3 class="fw-bold mb-0 text-white">{{ total_fiel }}</h3>
-                        
+                        <small class="text-light">(Clique para filtrar)</small>
                     </div>
                 </a>
             </div>
@@ -28,7 +25,7 @@
                     <div class="p-3 bg-warning text-dark rounded shadow-sm {% if status_filtro == 'oscilante' %}border border-3 border-dark{% endif %}">
                         <h5 class="mb-1 text-dark">Clientes Oscilantes</h5>
                         <h3 class="fw-bold mb-0 text-dark">{{ total_oscilante }}</h3>
-                        
+                        <small class="text-dark">(Clique para filtrar)</small>
                     </div>
                 </a>
             </div>
@@ -37,13 +34,12 @@
                     <div class="p-3 bg-danger rounded shadow-sm {% if status_filtro == 'inativo' %}border border-3 border-dark{% endif %}">
                         <h5 class="mb-1 text-white">Clientes Inativos</h5>
                         <h3 class="fw-bold mb-0 text-white">{{ total_inativo }}</h3>
-                        
+                        <small class="text-light">(Clique para filtrar)</small>
                     </div>
                 </a>
             </div>
         </div>
 
-       
         <form method="GET" action="/" class="card shadow-sm border-0 p-3 mb-4 bg-white">
             <div class="row g-3 align-items-center">
                 <div class="col-md-4">
@@ -73,7 +69,6 @@
             </div>
         </form>
 
-        
         <div class="d-flex gap-2 mb-3 align-items-center">
             <span class="fw-bold text-secondary">Filtro Rápido:</span>
             <a href="/?status=fiel{% if max_dias %}&max_dias={{ max_dias }}{% endif %}{% if ordem_data %}&ordem={{ ordem_data }}{% endif %}{% if busca %}&q={{ busca }}{% endif %}" 
@@ -90,7 +85,6 @@
             {% endif %}
         </div>
 
-       
         <div class="card shadow-sm border-0">
             <div class="card-body p-0">
                 <div class="table-responsive" style="max-height: 550px; overflow-y: auto;">
@@ -108,7 +102,7 @@
                             </tr>
                         </thead>
                         <tbody>
-                          
+                            {% for c in clientes %}
                             <tr>
                                 <td class="ps-3 fw-bold text-secondary">#{{ c.codigo_cliente }}</td>
                                 <td class="fw-bold text-dark">{{ c.nome_cliente or 'Não informado' }}</td>
@@ -130,10 +124,6 @@
                                 <td class="text-center pe-3">
                                     <input type="checkbox" class="form-check-input" id="resp_{{ c.codigo_cliente }}" {% if c.resposta_cliente %}checked{% endif %} onchange="salvarContato('{{ c.codigo_cliente }}')" style="width: 20px; height: 20px; cursor: pointer;">
                                 </td>
-                            </tr>
-                            {% else %}
-                            <tr>
-                                <td colspan="8" class="text-center text-muted py-4">Nenhum cliente encontrado com os filtros selecionados.</td>
                             </tr>
                             {% endfor %}
                         </tbody>
